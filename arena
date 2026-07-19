@@ -1,0 +1,1214 @@
+-- ========== ZEESCRIPT v2 - ULTRA OPTIMIZED ==========
+-- ========== NO TEXTURE + MAX FPS + HYPER CLICK ==========
+
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local player = game:GetService("Players").LocalPlayer
+local runService = game:GetService("RunService")
+local userInputService = game:GetService("UserInputService")
+local tweenService = game:GetService("TweenService")
+local teleportService = game:GetService("TeleportService")
+local lighting = game:GetService("Lighting")
+local workspace = game:GetService("Workspace")
+local virtualUser = game:GetService("VirtualUser")
+local logService = game:GetService("LogService")
+local coreGui = game:GetService("CoreGui")
+local debris = game:GetService("Debris")
+local stats = game:GetService("Stats")
+local network = game:GetService("NetworkClient")
+local httpService = game:GetService("HttpService")
+
+-- ========== CONFIG ==========
+local CLICK_SPEED = 999999
+local CLICK_MULTIPLIER = 512
+local BAR_TARGET = 8
+
+-- ========== FIND REMOTES ==========
+local function findRemote(name)
+    for _, v in pairs(replicatedStorage:GetDescendants()) do
+        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
+            if string.find(string.lower(v.Name), string.lower(name)) then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+local clickRemote = findRemote("ReqClickTrain")
+local speedRemote = findRemote("ReqUpdateTrainSpeed")
+local equipRemote = findRemote("ReqApplyEquipTrainMethod")
+local unequipRemote = findRemote("ReqApplyUnequipTrainMethod")
+
+-- ========== LOAD MODULES ==========
+local trainModule = nil
+local function getTrainModule()
+    if trainModule then return trainModule end
+    local script = replicatedStorage:FindFirstChild("Script")
+    if script then
+        local train = script:FindFirstChild("TrainSystem")
+        if train then
+            local service = train:FindFirstChild("TrainSystemService")
+            if service then
+                local success, module = pcall(require, service)
+                if success then
+                    trainModule = module
+                    return module
+                end
+            end
+        end
+    end
+    return nil
+end
+trainModule = getTrainModule()
+
+local storageModule = nil
+pcall(function()
+    local storage = replicatedStorage:FindFirstChild("Storage")
+    if storage then
+        local trainStorage = storage:FindFirstChild("TrainSystemStorage")
+        if trainStorage then
+            storageModule = require(trainStorage)
+        end
+    end
+end)
+
+-- ========== CORE FUNCTIONS ==========
+local function sendClick()
+    for i = 1, CLICK_MULTIPLIER do
+        if clickRemote then
+            pcall(function()
+                if clickRemote:IsA("RemoteFunction") then
+                    clickRemote:InvokeServer()
+                else
+                    clickRemote:FireServer()
+                end
+            end)
+        end
+    end
+    if trainModule and trainModule.onClickAccelerate then
+        pcall(trainModule.onClickAccelerate)
+    end
+end
+
+local function sendSpeed(speed)
+    speed = speed or CLICK_SPEED
+    if speedRemote then
+        pcall(function()
+            if speedRemote:IsA("RemoteFunction") then
+                speedRemote:InvokeServer(speed)
+            else
+                speedRemote:FireServer(speed)
+            end
+        end)
+    end
+    if trainModule and trainModule.setClickTrainSpeed then
+        pcall(function()
+            trainModule.setClickTrainSpeed(speed)
+        end)
+    end
+end
+
+local function equipMethod(methodId)
+    if equipRemote then
+        pcall(function()
+            if equipRemote:IsA("RemoteFunction") then
+                equipRemote:InvokeServer(methodId)
+            else
+                equipRemote:FireServer(methodId)
+            end
+        end)
+    end
+end
+
+local function unequipMethod()
+    if unequipRemote then
+        pcall(function()
+            if unequipRemote:IsA("RemoteFunction") then
+                unequipRemote:InvokeServer()
+            else
+                unequipRemote:FireServer()
+            end
+        end)
+    end
+    if trainModule and trainModule.requestUnequipTrainMethod then
+        pcall(trainModule.requestUnequipTrainMethod)
+    end
+end
+
+-- ========== BYPASS ==========
+local bypassActive = false
+
+local function activateBypass()
+    if bypassActive then return end
+    print("⚡ ACTIVATING BYPASS...")
+    
+    if storageModule then
+        pcall(function()
+            storageModule.getPlayerTrainValue = function(plr, method) return CLICK_SPEED end
+            storageModule.getAllPlayerTrainValues = function(plr)
+                local t = {}
+                for i = 1, 16 do t[i] = CLICK_SPEED end
+                return t
+            end
+            storageModule.getAllPlayerTrainValuesSum = function(plr) return CLICK_SPEED end
+            storageModule.getPlayerFrenzyValue = function(plr) return 999 end
+            storageModule.getIsFrenzyMode = function(plr) return true end
+        end)
+    end
+    
+    if trainModule then
+        pcall(function()
+            trainModule.getClickTrainSpeed = function() return CLICK_SPEED, CLICK_SPEED end
+            trainModule.startDecayCheck = function() return 0 end
+            trainModule.onClickAccelerate = function()
+                sendSpeed(CLICK_SPEED)
+                return 0
+            end
+            trainModule.isOPClickActivated = function() return 0, true end
+            trainModule.getPlayerFrenzyValue = function() return 0, 999 end
+        end)
+    end
+    
+    bypassActive = true
+    print("✅ BYPASS ACTIVATED! SPEED: " .. tostring(CLICK_SPEED) .. "x")
+end
+
+local function deactivateBypass()
+    if not bypassActive then return end
+    bypassActive = false
+    print("⏹ BYPASS DEACTIVATED")
+end
+
+-- ========== INFINITE YIELD (ANTI AFK/KICK) - IMPROVED ==========
+local infiniteYieldActive = false
+local yieldTimerConnection = nil
+local yieldConnections = {}
+local yieldLoopRunning = false
+
+local function simulateClick()
+    pcall(function()
+        -- Method 1: VirtualUser Click (Paling ampuh)
+        if virtualUser then
+            virtualUser:CaptureController()
+            virtualUser:ClickButton2(Vector2.new())
+            virtualUser:ClickButton1(Vector2.new())
+            
+            -- Simulasi klik di berbagai posisi
+            for i = 1, 3 do
+                virtualUser:ClickButton2(Vector2.new(
+                    math.random(100, 500),
+                    math.random(100, 500)
+                ))
+                task.wait(0.05)
+            end
+        end
+        
+        -- Method 2: Simulate keyboard input
+        if userInputService then
+            -- Simulate pressing random keys (non-intrusive)
+            local keys = {
+                Enum.KeyCode.W,
+                Enum.KeyCode.A,
+                Enum.KeyCode.S,
+                Enum.KeyCode.D,
+                Enum.KeyCode.Space,
+                Enum.KeyCode.LeftShift
+            }
+            local randomKey = keys[math.random(1, #keys)]
+            userInputService:SetKeyDown(randomKey)
+            task.wait(0.1)
+            userInputService:SetKeyUp(randomKey)
+        end
+        
+        -- Method 3: Mouse movement simulation
+        if userInputService then
+            local x = math.random(0, 1920)
+            local y = math.random(0, 1080)
+            userInputService:SetMouseLocation(x, y)
+            
+            -- Gerakan mouse secara acak
+            for i = 1, 5 do
+                x = x + math.random(-50, 50)
+                y = y + math.random(-50, 50)
+                userInputService:SetMouseLocation(
+                    math.clamp(x, 0, 1920),
+                    math.clamp(y, 0, 1080)
+                )
+                task.wait(0.02)
+            end
+        end
+    end)
+end
+
+local function activateInfiniteYield()
+    if infiniteYieldActive then return end
+    print("🔄 ACTIVATING INFINITE YIELD (IMPROVED)...")
+    infiniteYieldActive = true
+    
+    -- Initial setup
+    pcall(function()
+        if virtualUser then
+            virtualUser:CaptureController()
+        end
+    end)
+    
+    -- Click every 8-13 seconds (lebih agresif & random)
+    local function clickLoop()
+        while infiniteYieldActive do
+            simulateClick()
+            
+            -- Variasi waktu agar tidak terdeteksi pattern
+            local waitTime = 8 + math.random(0, 5)
+            task.wait(waitTime)
+        end
+    end
+    
+    -- Start click loop di thread terpisah
+    task.spawn(clickLoop)
+    
+    -- Backup timer setiap 10 detik
+    yieldTimerConnection = runService.Heartbeat:Connect(function()
+        if infiniteYieldActive then
+            if tick() % 10 < 0.1 then
+                simulateClick()
+            end
+        end
+    end)
+    
+    -- Extra protection: simulate activity when character spawns
+    local characterConn
+    characterConn = player.CharacterAdded:Connect(function()
+        task.wait(1)
+        simulateClick()
+    end)
+    table.insert(yieldConnections, characterConn)
+    
+    -- Extra: simulate click when game is idle
+    local idleConn
+    idleConn = userInputService.InputBegan:Connect(function()
+        if infiniteYieldActive then
+            -- Auto respond to any input with a click
+            task.wait(0.5)
+            simulateClick()
+        end
+    end)
+    table.insert(yieldConnections, idleConn)
+    
+    print("✅ INFINITE YIELD ACTIVATED! (Click every 8-13 seconds)")
+end
+
+local function deactivateInfiniteYield()
+    if not infiniteYieldActive then return end
+    infiniteYieldActive = false
+    
+    if yieldTimerConnection then
+        yieldTimerConnection:Disconnect()
+        yieldTimerConnection = nil
+    end
+    
+    for _, conn in pairs(yieldConnections) do
+        pcall(conn.Disconnect, conn)
+    end
+    yieldConnections = {}
+    
+    print("⏹ INFINITE YIELD DEACTIVATED")
+end
+
+-- ========== LOOP ==========
+local isRunning = false
+local loopConnection = nil
+local frameCount = 0
+
+local function startLoop()
+    if isRunning then return end
+    isRunning = true
+    
+    loopConnection = runService.Heartbeat:Connect(function()
+        if isRunning then
+            frameCount = frameCount + 1
+            sendClick()
+            sendSpeed(CLICK_SPEED)
+            
+            if frameCount % 100 == 0 then
+                collectgarbage("collect")
+                collectgarbage("step")
+            end
+        end
+    end)
+    print("🔥 LOOP ACTIVE!")
+end
+
+local function stopLoop()
+    isRunning = false
+    if loopConnection then
+        loopConnection:Disconnect()
+        loopConnection = nil
+    end
+    print("⏹ LOOP STOPPED")
+end
+
+-- ========== ULTRA OPTIMIZATION ==========
+local optimizationActive = false
+
+local function activateUltraOptimization()
+    if optimizationActive then return end
+    optimizationActive = true
+    
+    pcall(function()
+        print("⚡ ACTIVATING ULTRA OPTIMIZATION...")
+        
+        for _, obj in pairs(workspace:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("Texture") or obj:IsA("Decal") then
+                    obj:Destroy()
+                end
+                
+                if obj:IsA("BasePart") then
+                    obj.Material = Enum.Material.SmoothPlastic
+                    obj.CastShadow = false
+                    if obj.TextureID then
+                        obj.TextureID = ""
+                    end
+                end
+                
+                if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                    obj.Enabled = false
+                    obj:Destroy()
+                end
+                
+                if obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") or obj:IsA("SunRaysEffect") then
+                    obj.Enabled = false
+                    obj:Destroy()
+                end
+                
+                if obj:IsA("Sound") then
+                    obj.Playing = false
+                    obj:Destroy()
+                end
+                
+                if obj:IsA("Atmosphere") or obj:IsA("Sky") then
+                    obj:Destroy()
+                end
+            end)
+        end
+        
+        lighting.GlobalShadows = false
+        lighting.FogEnd = 9e9
+        lighting.FogStart = 9e9
+        lighting.Brightness = 1
+        lighting.Ambient = Color3.fromRGB(255, 255, 255)
+        lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+        lighting.Technology = Enum.Technology.Compatibility
+        
+        for _, obj in pairs(lighting:GetDescendants()) do
+            pcall(function()
+                if obj:IsA("PostEffect") or obj:IsA("BloomEffect") or obj:IsA("BlurEffect") or obj:IsA("ColorCorrectionEffect") or obj:IsA("SunRaysEffect") then
+                    obj.Enabled = false
+                    obj:Destroy()
+                end
+            end)
+        end
+        
+        settings().Rendering.QualityLevel = Enum.QualityLevel.Level01
+        settings().Rendering.EnableVRMode = false
+        settings().Rendering.EnableShadows = false
+        settings().Rendering.EnableSmoothSkinnedMesh = false
+        settings().Rendering.EnableGUI = false
+        settings().Rendering.EnableGlass = false
+        settings().Rendering.EnableFog = false
+        settings().Rendering.EnableGrid = false
+        settings().Rendering.EnableSimulation = false
+        settings().Rendering.EnableRay = false
+        
+        pcall(function()
+            if player.Character then
+                for _, obj in pairs(player.Character:GetDescendants()) do
+                    if obj:IsA("Texture") or obj:IsA("Decal") then
+                        obj:Destroy()
+                    end
+                    if obj:IsA("BasePart") then
+                        obj.Material = Enum.Material.SmoothPlastic
+                        obj.CastShadow = false
+                    end
+                    if obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") or obj:IsA("Sparkles") then
+                        obj.Enabled = false
+                        obj:Destroy()
+                    end
+                end
+            end
+        end)
+        
+        pcall(function()
+            for _, obj in pairs(player.PlayerGui:GetDescendants()) do
+                if obj:IsA("Texture") or obj:IsA("Decal") or obj:IsA("ImageLabel") or obj:IsA("ImageButton") then
+                    obj:Destroy()
+                end
+            end
+        end)
+        
+        task.spawn(function()
+            while optimizationActive do
+                task.wait(5)
+                pcall(function()
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("Debris") then
+                            obj:Destroy()
+                        end
+                    end
+                    
+                    for _, obj in pairs(workspace:GetDescendants()) do
+                        if obj:IsA("Texture") or obj:IsA("Decal") then
+                            obj:Destroy()
+                        end
+                        if obj:IsA("BasePart") then
+                            obj.Material = Enum.Material.SmoothPlastic
+                            obj.CastShadow = false
+                        end
+                    end
+                    
+                    collectgarbage("collect")
+                    collectgarbage("step")
+                end)
+            end
+        end)
+        
+        print("✅ ULTRA OPTIMIZATION ACTIVATED!")
+    end)
+end
+
+local function deactivateUltraOptimization()
+    optimizationActive = false
+    print("⏹ ULTRA OPTIMIZATION DEACTIVATED")
+end
+
+-- ========== CLEAR LOG ==========
+local function clearLog()
+    pcall(function()
+        if logService and logService.Clear then
+            logService:Clear()
+        end
+        
+        local oldPrint = print
+        print = function() end
+        task.wait(0.1)
+        print = oldPrint
+        
+        if coreGui then
+            local console = coreGui:FindFirstChild("Console")
+            if console then
+                console:Destroy()
+            end
+        end
+        
+        print("🧹 LOG CLEARED!")
+    end)
+end
+
+-- ========== MEMORY CLEAN ==========
+local function quickMemoryClean()
+    collectgarbage("collect")
+    collectgarbage("step")
+    print("🧹 MEMORY CLEANED!")
+end
+
+-- ========== GUI ==========
+local gui = Instance.new("ScreenGui")
+gui.Name = "ZeScriptGUI"
+gui.Parent = player:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+
+-- ========== FLOATING ICON ZS (KECIL) ==========
+local iconFrame = Instance.new("Frame")
+iconFrame.Size = UDim2.new(0, 45, 0, 45)
+iconFrame.Position = UDim2.new(0.92, -50, 0.85, -25)
+iconFrame.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+iconFrame.BackgroundTransparency = 0.1
+iconFrame.BorderSizePixel = 0
+iconFrame.Visible = true
+iconFrame.Parent = gui
+iconFrame.ZIndex = 999
+
+local iconCorner = Instance.new("UICorner")
+iconCorner.CornerRadius = UDim.new(1, 0)
+iconCorner.Parent = iconFrame
+
+local iconStroke = Instance.new("UIStroke")
+iconStroke.Thickness = 2
+iconStroke.Color = Color3.fromRGB(255, 255, 255)
+iconStroke.Transparency = 0.4
+iconStroke.Parent = iconFrame
+
+-- Icon Text "Z"
+local iconText = Instance.new("TextLabel")
+iconText.Name = "ZLogo"
+iconText.Size = UDim2.new(1, 0, 1, 0)
+iconText.BackgroundTransparency = 1
+iconText.Text = "Z"
+iconText.TextColor3 = Color3.fromRGB(255, 255, 255)
+iconText.Font = Enum.Font.GothamBlack
+iconText.TextScaled = true
+iconText.TextStrokeTransparency = 0.85
+iconText.TextStrokeColor3 = Color3.fromRGB(255, 255, 255)
+iconText.ZIndex = 1000
+iconText.Parent = iconFrame
+
+local padding = Instance.new("UIPadding")
+padding.PaddingTop = UDim.new(0.08, 0)
+padding.PaddingBottom = UDim.new(0.08, 0)
+padding.PaddingLeft = UDim.new(0.08, 0)
+padding.PaddingRight = UDim.new(0.08, 0)
+padding.Parent = iconText
+
+-- Glow
+local glow = Instance.new("Frame")
+glow.Size = UDim2.new(1.5, 0, 1.5, 0)
+glow.Position = UDim2.new(-0.25, 0, -0.25, 0)
+glow.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+glow.BackgroundTransparency = 0.85
+glow.BorderSizePixel = 0
+glow.Parent = iconFrame
+
+local glowCorner = Instance.new("UICorner")
+glowCorner.CornerRadius = UDim.new(1, 0)
+glowCorner.Parent = glow
+
+-- Pulse
+task.spawn(function()
+    while true do
+        task.wait(0.05)
+        pcall(function()
+            if iconFrame and iconFrame.Visible then
+                local pulse = 1 + math.sin(tick() * 3) * 0.06
+                glow.Size = UDim2.new(1.5 * pulse, 0, 1.5 * pulse, 0)
+                glow.BackgroundTransparency = 0.85 - math.sin(tick() * 3) * 0.08
+            end
+        end)
+    end
+end)
+
+-- ========== MAIN FRAME ==========
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 320, 0, 370)
+mainFrame.Position = UDim2.new(0.5, -160, 0.5, -185)
+mainFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+mainFrame.BackgroundTransparency = 0.15
+mainFrame.BorderSizePixel = 0
+mainFrame.ClipsDescendants = true
+mainFrame.Visible = false
+mainFrame.Parent = gui
+mainFrame.ZIndex = 1000
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 8)
+mainCorner.Parent = mainFrame
+
+local mainStroke = Instance.new("UIStroke")
+mainStroke.Thickness = 1.5
+mainStroke.Color = Color3.fromRGB(200, 30, 30)
+mainStroke.Transparency = 0.4
+mainStroke.Parent = mainFrame
+
+-- ========== TITLE BAR ==========
+local titleBar = Instance.new("Frame")
+titleBar.Size = UDim2.new(1, 0, 0, 30)
+titleBar.BackgroundColor3 = Color3.fromRGB(5, 5, 5)
+titleBar.BackgroundTransparency = 0.3
+titleBar.BorderSizePixel = 0
+titleBar.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = titleBar
+
+local titleText = Instance.new("TextLabel")
+titleText.Size = UDim2.new(0.5, 0, 1, 0)
+titleText.Position = UDim2.new(0.04, 0, 0, 0)
+titleText.Text = "ZEESCRIPT v2"
+titleText.TextColor3 = Color3.fromRGB(255, 255, 255)
+titleText.BackgroundTransparency = 1
+titleText.Font = Enum.Font.GothamBold
+titleText.TextSize = 11
+titleText.TextXAlignment = Enum.TextXAlignment.Left
+titleText.Parent = titleBar
+
+local closeMainBtn = Instance.new("TextButton")
+closeMainBtn.Size = UDim2.new(0, 20, 0, 20)
+closeMainBtn.Position = UDim2.new(0.91, 0, 0.15, 0)
+closeMainBtn.Text = "✕"
+closeMainBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeMainBtn.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+closeMainBtn.BackgroundTransparency = 0.5
+closeMainBtn.BorderSizePixel = 0
+closeMainBtn.Font = Enum.Font.GothamBold
+closeMainBtn.TextSize = 11
+closeMainBtn.Parent = titleBar
+
+local closeMainCorner = Instance.new("UICorner")
+closeMainCorner.CornerRadius = UDim.new(0, 4)
+closeMainCorner.Parent = closeMainBtn
+
+-- ========== CONTENT ==========
+local contentContainer = Instance.new("Frame")
+contentContainer.Size = UDim2.new(1, 0, 1, -30)
+contentContainer.Position = UDim2.new(0, 0, 0, 30)
+contentContainer.BackgroundTransparency = 1
+contentContainer.Parent = mainFrame
+
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, 0, 1, 0)
+scrollFrame.BackgroundTransparency = 1
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 1
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.Parent = contentContainer
+
+local scrollLayout = Instance.new("UIListLayout")
+scrollLayout.Padding = UDim.new(0, 4)
+scrollLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+scrollLayout.SortOrder = Enum.SortOrder.LayoutOrder
+scrollLayout.Parent = scrollFrame
+
+local scrollPadding = Instance.new("UIPadding")
+scrollPadding.PaddingTop = UDim.new(0, 4)
+scrollPadding.PaddingBottom = UDim.new(0, 4)
+scrollPadding.Parent = scrollFrame
+
+-- Helper Button
+local function createBtn(text, bg, parent, order, height)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.92, 0, 0, height or 24)
+    btn.BackgroundColor3 = bg
+    btn.BackgroundTransparency = 0.2
+    btn.BorderSizePixel = 0
+    btn.Text = text
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.GothamBold
+    btn.TextSize = 9
+    btn.LayoutOrder = order
+    btn.Parent = parent
+    
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 4)
+    c.Parent = btn
+    return btn
+end
+
+-- Status Panel
+local statusPanel = Instance.new("Frame")
+statusPanel.Size = UDim2.new(0.92, 0, 0, 24)
+statusPanel.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
+statusPanel.BackgroundTransparency = 0.3
+statusPanel.BorderSizePixel = 0
+statusPanel.LayoutOrder = 1
+statusPanel.Parent = scrollFrame
+
+local spCorner = Instance.new("UICorner")
+spCorner.CornerRadius = UDim.new(0, 4)
+spCorner.Parent = statusPanel
+
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(1, 0, 1, 0)
+statusLabel.Position = UDim2.new(0.05, 0, 0, 0)
+statusLabel.Text = "⚡ OFF"
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+statusLabel.BackgroundTransparency = 1
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextSize = 9
+statusLabel.TextXAlignment = Enum.TextXAlignment.Left
+statusLabel.Parent = statusPanel
+
+-- Buttons
+local startBtn = createBtn("▶ START", Color3.fromRGB(160, 30, 30), scrollFrame, 2, 26)
+local bypassBtn = createBtn("💀 BYPASS", Color3.fromRGB(30, 30, 30), scrollFrame, 3, 24)
+local yieldBtn = createBtn("🔄 INFINITE YIELD", Color3.fromRGB(30, 30, 30), scrollFrame, 4, 24)
+
+-- Equip Row
+local row1 = Instance.new("Frame")
+row1.Size = UDim2.new(0.92, 0, 0, 22)
+row1.BackgroundTransparency = 1
+row1.LayoutOrder = 5
+row1.Parent = scrollFrame
+
+local row1Layout = Instance.new("UIListLayout")
+row1Layout.FillDirection = Enum.FillDirection.Horizontal
+row1Layout.Padding = UDim.new(0, 3)
+row1Layout.Parent = row1
+
+local equipBtns = {}
+for i = 5, 8 do
+    local eqBtn = createBtn("M"..tostring(i), Color3.fromRGB(15, 15, 15), row1, i-4, 22)
+    eqBtn.Size = UDim2.new(0.25, -2, 1, 0)
+    eqBtn.TextSize = 8
+    equipBtns[i] = eqBtn
+end
+
+-- Row 2
+local row2 = Instance.new("Frame")
+row2.Size = UDim2.new(0.92, 0, 0, 22)
+row2.BackgroundTransparency = 1
+row2.LayoutOrder = 6
+row2.Parent = scrollFrame
+
+local row2Layout = Instance.new("UIListLayout")
+row2Layout.FillDirection = Enum.FillDirection.Horizontal
+row2Layout.Padding = UDim.new(0, 3)
+row2Layout.Parent = row2
+
+local unequipBtn = createBtn("⏹ UNEQ", Color3.fromRGB(30, 30, 30), row2, 1, 22)
+unequipBtn.Size = UDim2.new(0.32, 0, 1, 0)
+
+local memBtn = createBtn("🧹 MEM", Color3.fromRGB(30, 30, 30), row2, 2, 22)
+memBtn.Size = UDim2.new(0.32, 0, 1, 0)
+
+local clearLogBtn = createBtn("📋 CLEAR", Color3.fromRGB(30, 30, 30), row2, 3, 22)
+clearLogBtn.Size = UDim2.new(0.32, 0, 1, 0)
+
+-- Row 3
+local row3 = Instance.new("Frame")
+row3.Size = UDim2.new(0.92, 0, 0, 22)
+row3.BackgroundTransparency = 1
+row3.LayoutOrder = 7
+row3.Parent = scrollFrame
+
+local row3Layout = Instance.new("UIListLayout")
+row3Layout.FillDirection = Enum.FillDirection.Horizontal
+row3Layout.Padding = UDim.new(0, 3)
+row3Layout.Parent = row3
+
+local ultraOptBtn = createBtn("⚡ ULTRA OPT", Color3.fromRGB(160, 30, 30), row3, 1, 22)
+ultraOptBtn.Size = UDim2.new(0.48, 0, 1, 0)
+
+local rejoinBtn = createBtn("🔄 REJ", Color3.fromRGB(30, 30, 30), row3, 2, 22)
+rejoinBtn.Size = UDim2.new(0.48, 0, 1, 0)
+
+-- Row 4
+local row4 = Instance.new("Frame")
+row4.Size = UDim2.new(0.92, 0, 0, 22)
+row4.BackgroundTransparency = 1
+row4.LayoutOrder = 8
+row4.Parent = scrollFrame
+
+local row4Layout = Instance.new("UIListLayout")
+row4Layout.FillDirection = Enum.FillDirection.Horizontal
+row4Layout.Padding = UDim.new(0, 3)
+row4Layout.Parent = row4
+
+local leaveBtn = createBtn("🚪 LV", Color3.fromRGB(30, 30, 30), row4, 1, 22)
+leaveBtn.Size = UDim2.new(0.48, 0, 1, 0)
+
+local aboutBtn = createBtn("📖 ABOUT", Color3.fromRGB(30, 30, 30), row4, 2, 22)
+aboutBtn.Size = UDim2.new(0.48, 0, 1, 0)
+
+-- Version
+local verLabel = Instance.new("TextLabel")
+verLabel.Size = UDim2.new(0.9, 0, 0, 16)
+verLabel.Position = UDim2.new(0.05, 0, 1, -18)
+verLabel.Text = "ZEESCRIPT v2 | ULTRA OPTIMIZED"
+verLabel.TextColor3 = Color3.fromRGB(80, 80, 80)
+verLabel.BackgroundTransparency = 1
+verLabel.Font = Enum.Font.GothamBold
+verLabel.TextSize = 7
+verLabel.TextXAlignment = Enum.TextXAlignment.Center
+verLabel.Parent = mainFrame
+
+-- ========== ABOUT FRAME ==========
+local aboutFrame = Instance.new("Frame")
+aboutFrame.Size = UDim2.new(0, 280, 0, 200)
+aboutFrame.Position = UDim2.new(0.5, -140, 0.5, -100)
+aboutFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+aboutFrame.BackgroundTransparency = 0.1
+aboutFrame.BorderSizePixel = 0
+aboutFrame.Visible = false
+aboutFrame.Parent = gui
+
+local aboutCorner = Instance.new("UICorner")
+aboutCorner.CornerRadius = UDim.new(0, 8)
+aboutCorner.Parent = aboutFrame
+
+local aboutStroke = Instance.new("UIStroke")
+aboutStroke.Thickness = 1.5
+aboutStroke.Color = Color3.fromRGB(200, 30, 30)
+aboutStroke.Transparency = 0.4
+aboutStroke.Parent = aboutFrame
+
+local aboutTitle = Instance.new("TextLabel")
+aboutTitle.Size = UDim2.new(1, 0, 0, 30)
+aboutTitle.Position = UDim2.new(0, 0, 0, 0)
+aboutTitle.Text = "📖 ABOUT ZEESCRIPT"
+aboutTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
+aboutTitle.BackgroundColor3 = Color3.fromRGB(5, 5, 5)
+aboutTitle.BackgroundTransparency = 0.3
+aboutTitle.Font = Enum.Font.GothamBold
+aboutTitle.TextSize = 11
+aboutTitle.Parent = aboutFrame
+
+local aboutClose = Instance.new("TextButton")
+aboutClose.Size = UDim2.new(0, 25, 0, 25)
+aboutClose.Position = UDim2.new(0.88, 0, 0.02, 0)
+aboutClose.Text = "✕"
+aboutClose.TextColor3 = Color3.fromRGB(255, 255, 255)
+aboutClose.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+aboutClose.BackgroundTransparency = 0.5
+aboutClose.BorderSizePixel = 0
+aboutClose.Font = Enum.Font.GothamBold
+aboutClose.TextSize = 11
+aboutClose.Parent = aboutFrame
+
+local aboutCloseCorner = Instance.new("UICorner")
+aboutCloseCorner.CornerRadius = UDim.new(0, 4)
+aboutCloseCorner.Parent = aboutClose
+
+local aboutText = Instance.new("TextLabel")
+aboutText.Size = UDim2.new(0.9, 0, 0.85, 0)
+aboutText.Position = UDim2.new(0.05, 0, 0.1, 0)
+aboutText.Text = [[
+╔═══════════════════════════════════╗
+║         ZEESCRIPT v2              ║
+║       ULTRA OPTIMIZED             ║
+║                                   ║
+║  ⚡ ULTRA OPT - No Texture       ║
+║  💀 BYPASS - Unlimited Speed     ║
+║  🔄 INFINITE YIELD - Anti AFK   ║
+║  🔥 Hyper Click x512             ║
+║                                   ║
+║  Created by: ZEESCRIPT           ║
+║  Version: 2.0 ULTRA              ║
+╚═══════════════════════════════════╝
+]]
+aboutText.TextColor3 = Color3.fromRGB(200, 200, 200)
+aboutText.BackgroundTransparency = 1
+aboutText.Font = Enum.Font.Gotham
+aboutText.TextSize = 9
+aboutText.TextXAlignment = Enum.TextXAlignment.Left
+aboutText.TextYAlignment = Enum.TextYAlignment.Top
+aboutText.Parent = aboutFrame
+
+-- ========== DRAG SYSTEM (UNIVERSAL) ==========
+local function MakeDraggable(frame, handle)
+    handle = handle or frame
+
+    local dragging = false
+    local dragInput
+    local dragStart
+    local startPos
+
+    handle.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    handle.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or
+           input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    userInputService.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            local delta = input.Position - dragStart
+
+            frame.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- ========== APPLY DRAG ==========
+MakeDraggable(iconFrame)
+MakeDraggable(mainFrame, titleBar)
+
+-- ========== TOGGLE GUI ==========
+local isOpen = false
+
+function toggleGUI()
+    isOpen = not isOpen
+    if isOpen then
+        mainFrame.Visible = true
+        mainFrame.Position = UDim2.new(0.5, -160, 0.5, -185)
+    else
+        mainFrame.Visible = false
+        aboutFrame.Visible = false
+    end
+end
+
+local iconClickStart = nil
+local iconDragDetected = false
+local CLICK_THRESHOLD = 15
+
+iconFrame.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        iconClickStart = input.Position
+        iconDragDetected = false
+    end
+end)
+
+iconFrame.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or
+       input.UserInputType == Enum.UserInputType.Touch then
+        if iconClickStart then
+            local delta = (input.Position - iconClickStart).Magnitude
+            if delta > CLICK_THRESHOLD then
+                iconDragDetected = true
+            end
+        end
+    end
+end)
+
+iconFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or 
+       input.UserInputType == Enum.UserInputType.Touch then
+        if not iconDragDetected and iconClickStart then
+            toggleGUI()
+        end
+        iconClickStart = nil
+        iconDragDetected = false
+    end
+end)
+
+closeMainBtn.MouseButton1Click:Connect(function()
+    isOpen = false
+    mainFrame.Visible = false
+    aboutFrame.Visible = false
+end)
+
+-- ========== INTERACTIONS ==========
+local active = false
+local bypassActiveState = false
+local ultraOptState = false
+local yieldState = false
+
+startBtn.MouseButton1Click:Connect(function()
+    active = not active
+    if active then
+        startLoop()
+        startBtn.Text = "⏹ STOP"
+        startBtn.BackgroundColor3 = Color3.fromRGB(80, 20, 20)
+        statusLabel.Text = "⚡ ON"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        stopLoop()
+        startBtn.Text = "▶ START"
+        startBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+        statusLabel.Text = "⚡ OFF"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+bypassBtn.MouseButton1Click:Connect(function()
+    if not bypassActiveState then
+        activateBypass()
+        bypassBtn.Text = "💀 ON"
+        bypassBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+        bypassActiveState = true
+        statusLabel.Text = "💀 BYPASS"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        deactivateBypass()
+        bypassBtn.Text = "💀 BYPASS"
+        bypassBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        bypassActiveState = false
+        if active then
+            statusLabel.Text = "⚡ ON"
+        else
+            statusLabel.Text = "⚡ OFF"
+        end
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+yieldBtn.MouseButton1Click:Connect(function()
+    if not yieldState then
+        activateInfiniteYield()
+        yieldBtn.Text = "🔄 ON"
+        yieldBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+        yieldState = true
+        statusLabel.Text = "🔄 YIELD"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        deactivateInfiniteYield()
+        yieldBtn.Text = "🔄 INFINITE YIELD"
+        yieldBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+        yieldState = false
+        if active then
+            statusLabel.Text = "⚡ ON"
+        elseif bypassActiveState then
+            statusLabel.Text = "💀 BYPASS"
+        else
+            statusLabel.Text = "⚡ OFF"
+        end
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+for id, btn in pairs(equipBtns) do
+    btn.MouseButton1Click:Connect(function()
+        equipMethod(id)
+        for _, other in pairs(equipBtns) do
+            other.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+        end
+        btn.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
+    end)
+end
+
+unequipBtn.MouseButton1Click:Connect(function()
+    unequipMethod()
+    for _, btn in pairs(equipBtns) do
+        btn.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+    end
+end)
+
+memBtn.MouseButton1Click:Connect(function()
+    quickMemoryClean()
+    statusLabel.Text = "🧹 MEM"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    task.wait(0.3)
+    if active then
+        statusLabel.Text = "⚡ ON"
+    elseif bypassActiveState then
+        statusLabel.Text = "💀 BYPASS"
+    elseif yieldState then
+        statusLabel.Text = "🔄 YIELD"
+    else
+        statusLabel.Text = "⚡ OFF"
+    end
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+end)
+
+clearLogBtn.MouseButton1Click:Connect(function()
+    clearLog()
+    statusLabel.Text = "📋 CLEAR"
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    task.wait(0.3)
+    if active then
+        statusLabel.Text = "⚡ ON"
+    elseif bypassActiveState then
+        statusLabel.Text = "💀 BYPASS"
+    elseif yieldState then
+        statusLabel.Text = "🔄 YIELD"
+    else
+        statusLabel.Text = "⚡ OFF"
+    end
+    statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+end)
+
+ultraOptBtn.MouseButton1Click:Connect(function()
+    if not ultraOptState then
+        activateUltraOptimization()
+        ultraOptBtn.Text = "⚡ ON"
+        ultraOptBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 0)
+        ultraOptState = true
+        statusLabel.Text = "⚡ ULTRA OPT"
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    else
+        deactivateUltraOptimization()
+        ultraOptBtn.Text = "⚡ ULTRA OPT"
+        ultraOptBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+        ultraOptState = false
+        if active then
+            statusLabel.Text = "⚡ ON"
+        elseif bypassActiveState then
+            statusLabel.Text = "💀 BYPASS"
+        elseif yieldState then
+            statusLabel.Text = "🔄 YIELD"
+        else
+            statusLabel.Text = "⚡ OFF"
+        end
+        statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    end
+end)
+
+rejoinBtn.MouseButton1Click:Connect(function()
+    if active then
+        stopLoop()
+        active = false
+        startBtn.Text = "▶ START"
+        startBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+    end
+    if yieldState then
+        deactivateInfiniteYield()
+        yieldState = false
+        yieldBtn.Text = "🔄 INFINITE YIELD"
+        yieldBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+    if bypassActiveState then
+        deactivateBypass()
+        bypassActiveState = false
+        bypassBtn.Text = "💀 BYPASS"
+        bypassBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+    task.wait(0.3)
+    teleportService:Teleport(game.PlaceId, player)
+end)
+
+leaveBtn.MouseButton1Click:Connect(function()
+    if active then
+        stopLoop()
+        active = false
+        startBtn.Text = "▶ START"
+        startBtn.BackgroundColor3 = Color3.fromRGB(160, 30, 30)
+    end
+    if yieldState then
+        deactivateInfiniteYield()
+        yieldState = false
+        yieldBtn.Text = "🔄 INFINITE YIELD"
+        yieldBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+    if bypassActiveState then
+        deactivateBypass()
+        bypassActiveState = false
+        bypassBtn.Text = "💀 BYPASS"
+        bypassBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+    task.wait(0.3)
+    player:Kick("Leave")
+end)
+
+aboutBtn.MouseButton1Click:Connect(function()
+    aboutFrame.Visible = not aboutFrame.Visible
+    if aboutFrame.Visible then
+        aboutBtn.BackgroundColor3 = Color3.fromRGB(60, 30, 30)
+    else
+        aboutBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    end
+end)
+
+aboutClose.MouseButton1Click:Connect(function()
+    aboutFrame.Visible = false
+    aboutBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+end)
+
+-- ========== STARTUP MESSAGE ==========
+print("╔══════════════════════════════════════════════════════════╗")
+print("║     ZEESCRIPT v2 - ULTRA OPTIMIZED                      ║")
+print("║                                                         ║")
+print("║  ✅ SCRIPT LOADED! All features are OFF by default     ║")
+print("║                                                         ║")
+print("║  🔥 Click 'START' to activate Hyper Click             ║")
+print("║  💀 Click 'BYPASS' for Unlimited Speed                ║")
+print("║  🔄 Click 'INFINITE YIELD' for Anti AFK               ║")
+print("║  ⚡ Click 'ULTRA OPT' to Remove Textures              ║")
+print("║                                                         ║")
+print("║  💡 Click Icon ZS to open/close GUI                   ║")
+print("║  💡 Drag Icon ZS to move it                           ║")
+print("╚══════════════════════════════════════════════════════════╝")
+
+-- ========== NO AUTO START ==========
+-- Semua fitur OFF saat pertama kali di-load
+-- User harus mengaktifkan manual melalui tombol
